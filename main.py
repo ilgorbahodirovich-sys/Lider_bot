@@ -18,96 +18,78 @@ bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 
-# --- BAZANI SOZLASH ---
+# --- BAZA BILAN ISHLASH ---
 def init_db():
-    conn = sqlite3.connect('mijozlar_bazasi.db')
+    conn = sqlite3.connect('mijozlar.db')
     cursor = conn.cursor()
     cursor.execute('''CREATE TABLE IF NOT EXISTS reminders 
-                      (id INTEGER PRIMARY KEY, client_info TEXT, remind_date TEXT, status TEXT)''')
+                      (id INTEGER PRIMARY KEY, info TEXT, date TEXT, status TEXT)''')
     conn.commit()
     conn.close()
 
-def save_to_db(info, days):
-    remind_at = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M')
-    conn = sqlite3.connect('mijozlar_bazasi.db')
+def save_reminder(info, days):
+    remind_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M')
+    conn = sqlite3.connect('mijozlar.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO reminders (client_info, remind_date, status) VALUES (?, ?, ?)",
-                   (info, remind_at, 'pending'))
+    cursor.execute("INSERT INTO reminders (info, date, status) VALUES (?, ?, ?)", (info, remind_date, 'pending'))
     conn.commit()
     conn.close()
-    return remind_at
+    return remind_date
 
-def get_days_keyboard():
-    builder = InlineKeyboardBuilder()
-    muddatlar = [("1 kun", 1), ("3 kun", 3), ("5 kun", 5), ("10 kun", 10), ("15 kun", 15), ("30 kun", 30)]
-    for text, day in muddatlar:
-        builder.button(text=text, callback_data=f"set_{day}")
-    builder.adjust(3)
-    return builder.as_markup()
-
-async def check_reminders():
+async def check_jobs():
     now = datetime.now().strftime('%Y-%m-%d %H:%M')
-    conn = sqlite3.connect('mijozlar_bazasi.db')
+    conn = sqlite3.connect('mijozlar.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT id, client_info FROM reminders WHERE remind_date <= ? AND status = 'pending'", (now,))
-    jobs = cursor.fetchall()
-    for job in jobs:
-        rid, info = job
+    cursor.execute("SELECT id, info FROM reminders WHERE date <= ? AND status = 'pending'", (now,))
+    for rid, info in cursor.fetchall():
         try:
             await bot.send_message(ADMIN_ID, f"🔔 **ESLATMA!**\n\n{info}")
-            cursor.execute("UPDATE reminders SET status = 'notified' WHERE id = ?", (rid,))
-        except Exception as e:
-            logging.error(f"Eslatma yuborishda xato: {e}")
+            cursor.execute("UPDATE reminders SET status = 'done' WHERE id = ?", (rid,))
+        except: pass
     conn.commit()
     conn.close()
 
-temp_data = {}
-
+# --- BOT FUNKSIYALARI ---
 @dp.message(Command("start"))
-async def start_cmd(message: types.Message):
-    if message.from_user.id == ADMIN_ID:
-        await message.answer("✅ Bot ishga tushdi! Mijoz ma'lumotlarini yuboring (masalan: Ism, tel, ish turi).")
+async def start(m: types.Message):
+    if m.from_user.id == ADMIN_ID:
+        await m.answer("✅ Bot tayyor! Mijoz haqida yozing.")
 
 @dp.message(F.text)
-async def process_text(message: types.Message):
-    if message.from_user.id == ADMIN_ID:
-        temp_data[ADMIN_ID] = message.text
-        await message.answer("Ushbu mijoz uchun muddatni tanlang:", reply_markup=get_days_keyboard())
+async def handle_text(m: types.Message):
+    if m.from_user.id == ADMIN_ID:
+        kb = InlineKeyboardBuilder()
+        for d in [1, 3, 5, 10, 15, 30]:
+            kb.button(text=f"{d} kun", callback_data=f"d_{d}_{m.text[:20]}")
+        kb.adjust(3)
+        await m.answer(f"⏳ Muddatni tanlang:\n\n`{m.text}`", reply_markup=kb.as_markup())
 
-@dp.callback_query(F.data.startswith("set_"))
-async def save_rem(callback: types.CallbackQuery):
-    days = int(callback.data.split("_")[1])
-    info = temp_data.get(ADMIN_ID, "Noma'lum mijoz")
-    date = save_to_db(info, days)
-    await callback.message.edit_text(f"✅ Saqlandi!\n\n📋 {info}\n⏰ Eslatma vaqti: {date} ({days} kundan keyin)")
-    await callback.answer()
+@dp.callback_query(F.data.startswith("d_"))
+async def callback(c: types.CallbackQuery):
+    _, days, info_part = c.data.split("_")
+    full_info = c.message.text.split("\n\n")[1]
+    date = save_reminder(full_info, int(days))
+    await c.message.edit_text(f"✅ Saqlandi!\n⏰ Eslatma: {date}")
 
-# --- RENDER UCHUN VEB SERVER (PORTNI BAND QILISH) ---
+# --- RENDER PORTINI ALDASH (WEB SERVER) ---
 async def handle(request):
-    return web.Response(text="Lider Bot is running...")
+    return web.Response(text="Bot is Live")
 
 async def main():
     init_db()
-    # Eslatmalarni har minutda tekshirish
-    scheduler.add_job(check_reminders, "interval", minutes=1)
+    scheduler.add_job(check_jobs, "interval", minutes=1)
     scheduler.start()
     
-    # Render portini band qilish uchun veb-server
+    # Render talab qiladigan veb qismi
     app = web.Application()
     app.router.add_get('/', handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    port = int(os.getenv('PORT', 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     
-    logging.info(f"Veb-server {port} portida ishga tushdi")
-    
-    # Bot pollingni boshlash
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logging.info("Bot to'xtatildi")
+    asyncio.run(main())

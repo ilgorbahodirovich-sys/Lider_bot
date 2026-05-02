@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from apscheduler.schedulers.asyncio import AsyncioScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # --- SOZLAMALAR ---
 API_TOKEN = '7206103986:AAF-6eM0Z_g1jI_K64W_uOasw6Wv9qA2Y3Y'
@@ -14,7 +14,7 @@ ADMIN_ID = 5621437172
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
-scheduler = AsyncioScheduler()
+scheduler = AsyncIOScheduler()
 
 # --- BAZANI SOZLASH ---
 def init_db():
@@ -63,7 +63,7 @@ temp_data = {}
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
     if message.from_user.id == ADMIN_ID:
-        await message.answer("✅ Tayyor! Mijoz haqida yozing, muddatni tanlaymiz.")
+        await message.answer("✅ Bot ishga tushdi! Mijoz ma'lumotlarini yuboring.")
 
 @dp.message(F.text)
 async def process_text(message: types.Message):
